@@ -1,0 +1,25 @@
+{
+    "name": "Slack Amesh Backend",
+    "description": "Slack Amesh",
+    "repository": "https://github.com/seratch/slack-rain-clouds-rader",
+    "keywords": [
+        "Slack",
+        "Slack API",
+        "Heroku"
+    ],
+    "env": {
+        "SLACK_SIGNING_SECRET": {
+            "description": "Slack Signing Secret - https://api.slack.com/apps",
+            "value": "cda6e9cbf46a********************"
+        },
+        "SLACK_BOT_TOKEN": {
+            "description": "Slack App Bot Token - https://api.slack.com/apps",
+            "value": "xoxb-************-************-************************"
+        },
+        "YAHOO_JAPAN_API_CLIENT_ID": {
+            "description": "Yahoo! JAPAN Application ID - https://e.developer.yahoo.co.jp/dashboard/",
+            "value": "cda6e9cbf46a********************"
+        }
+    },
+    "image": "heroku/nodejs"
+}

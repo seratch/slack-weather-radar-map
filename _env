@@ -1,0 +1,3 @@
+export SLACK_SIGNING_SECRET=cda6e9cbf46a********************
+export SLACK_BOT_TOKEN=xoxb-************-************-************************
+export YAHOO_JAPAN_API_CLIENT_ID=dj00aiZpP****************************************
