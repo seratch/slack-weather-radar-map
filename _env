@@ -1,3 +1,5 @@
 export SLACK_SIGNING_SECRET=cda6e9cbf46a********************
 export SLACK_BOT_TOKEN=xoxb-************-************-************************
 export YAHOO_JAPAN_API_CLIENT_ID=dj00aiZpP****************************************
+export YAHOO_JAPAN_API_MAP_MODE=map # https://developer.yahoo.co.jp/webapi/map/openlocalplatform/v1/static.html
+export SLASH_COMMAND_NAME=amesh

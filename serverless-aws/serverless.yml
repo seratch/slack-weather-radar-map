@@ -1,0 +1,26 @@
+service:
+  name: slack-weather-radar-map
+
+plugins:
+  - serverless-plugin-typescript
+  - serverless-offline
+
+provider:
+  name: aws
+  runtime: nodejs10.x
+  region: ap-northeast-1 # Tokyo Region
+  environment:
+    SERVERLESS_STAGE: ${env:SERVERLESS_STAGE, 'dev'}
+    SLACK_SIGNING_SECRET: ${env:SLACK_SIGNING_SECRET}
+    SLACK_BOT_TOKEN: ${env:SLACK_BOT_TOKEN}
+    SLASH_COMMAND_NAME: ${env:SLASH_COMMAND_NAME}
+    YAHOO_JAPAN_API_CLIENT_ID: ${env:YAHOO_JAPAN_API_CLIENT_ID}
+    YAHOO_JAPAN_API_MAP_MODE: ${env:YAHOO_JAPAN_API_MAP_MODE}
+
+functions:
+  app:
+    handler: handler.app
+    events:
+      - http:
+          method: post
+          path: /slack/events

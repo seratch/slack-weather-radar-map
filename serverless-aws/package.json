@@ -1,0 +1,27 @@
+{
+  "name": "slack-weather-radar-map",
+  "version": "1.0.0",
+  "description": "Serverless webpack example using Typescript",
+  "main": "handler.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "@slack/bolt": "^1.2.0",
+    "moment-timezone": "^0.5.26",
+    "request": "^2.88.0",
+    "request-promise-native": "^1.0.7",
+    "serverless-http": "^2.0.2",
+    "source-map-support": "^0.5.10"
+  },
+  "devDependencies": {
+    "@types/node": "^10.12.18",
+    "serverless": "^1.48.2",
+    "serverless-offline": "^5.8.0",
+    "serverless-plugin-typescript": "^1.1.9",
+    "ts-loader": "^5.3.3",
+    "typescript": "^3.2.4"
+  },
+  "author": "The serverless webpack authors (https://github.com/elastic-coders/serverless-webpack)",
+  "license": "MIT"
+}

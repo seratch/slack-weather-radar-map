@@ -1,94 +1,218 @@
 'use strict';
 import { App, LogLevel } from '@slack/bolt';
 import { createCanvas, Image } from 'canvas';
-import moment = require('moment');
+import moment = require('moment-timezone');
+import { WebAPICallResult } from '@slack/web-api';
 
 const app = new App({
     token: process.env.SLACK_BOT_TOKEN,
     signingSecret: process.env.SLACK_SIGNING_SECRET,
     logLevel: LogLevel.DEBUG
 });
-app.error(console.log);
+app.error(printCompleteJSON);
 
 (async () => {
     await app.start(process.env.PORT || 3000);
-    console.log('⚡️ Bolt app is running!');
+    console.log('⚡️ 雨雲レーダーアプリが起動しました ⛈️');
 })();
 
 const GIFEncoder = require('gifencoder');
 const request = require('request-promise-native');
 const yahooAppId = process.env.YAHOO_JAPAN_API_CLIENT_ID;
+const yahooMapMode = process.env.YAHOO_JAPAN_API_MAP_MODE || 'map';
+const slashCommandName = (process.env.SLASH_COMMAND_NAME || 'amesh').replace(/\//, '');
 
-app.command('/amesh', ({ command, ack, context }) => {
+app.command(`/${slashCommandName}`, async ({ command, ack, context }) => {
     ack();
 
-    const prefectureName = command.text.toLowerCase() || 'tokyo';
+    const commandText = command.text.toLowerCase();
+    const commandInputs = commandText ? commandText.split(/\s+/) : [];
+    const prefectureName = commandInputs.length > 0 ? commandInputs[0] : 'tokyo';
     const prefecture = prefectures[prefectureName] || prefectures['tokyo'];
     const lat = prefecture.lat, lon = prefecture.lon;
-
     const width = 400, height = 300;
-    const images: Promise<Buffer>[] = [];
+    const token = context.botToken;
 
-    // fetch a few images
-    var m = moment();
-    m = m.subtract(40, 'minutes');
-    for (var i = 0; i < 4; i++) {
-        m = m.add(20, 'minutes');
-        const url = `https://map.yahooapis.jp/map/V1/static?appid=${yahooAppId}&z=10&lat=${lat}&lon=${lon}&width=${width}&height=${height}&overlay=type:rainfall|datelabel:on|date:${m.format('YYYYMMDDHHmm')}`;
-        const req = request.get({ url: url, encoding: null });
-        images.push(req);
-    }
-
-    const canvas = createCanvas(width, height);
-    const encoder = createGIFEncoder(width, height);
-
-    Promise.all(images).then(imageBuffers => {
-        return imageBuffers.map(buf => {
-            new Promise((resolve, reject) => {
-                const img = new Image();
-                img.onload = () => resolve(img);
-                img.onerror = (e) => reject(e);
-                img.src = buf;
-            }).then(img => {
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, width, height);
-                encoder.addFrame(ctx);
-            }).catch(console.log);
+    const mode = extractMode(commandInputs);
+    if (mode === 'now') {
+        // Just upload a single image
+        var m = moment().tz('Asia/Tokyo');
+        const url = buildImageUrl({ lat, lon, width, height, m });
+        const req: Promise<Buffer> = request.get({ url: url, encoding: null });
+        req.then(image => {
+            uploadImage({
+                token: token,
+                channelId: command.channel_id,
+                prefName: prefectureName,
+                prefKanjiName: prefecture.kanjiName,
+                radarType: '現在の',
+                filetype: 'png',
+                file: image
+            });
         });
-    }).then(_ => {
-        return uploadImage({
-            botToken: context.botToken,
+    } else {
+        // Create an animated GIF 
+        const imageFetchRequests: Promise<Buffer>[] = [];
+        var m = moment().tz('Asia/Tokyo');
+        if (mode === 'today') {
+            m = m.subtract(1, 'day');
+            for (var i = 0; i < 25; i++) {
+                const url = buildImageUrl({ lat, lon, width, height, m });
+                const req = request.get({ url, encoding: null });
+                imageFetchRequests.push(req);
+                m = m.add(1, 'hour');
+            }
+        } else {
+            m = m.subtract(10, 'minutes');
+            for (var i = 0; i < 7; i++) {
+                const url = buildImageUrl({ lat, lon, width, height, m });
+                const req = request.get({ url, encoding: null });
+                imageFetchRequests.push(req);
+                m = m.add(10, 'minutes');
+            }
+        }
+
+        var chatPostMessageArgs = {
+            token: token,
+            channelId: command.channel_id,
+            prefectureKanjiName: prefecture.kanjiName,
+            asUser: true
+        };
+        const loadingMessageTs: string | undefined =
+            await callChatPostMessage(chatPostMessageArgs).then(extractMessageTs)
+                .catch(error => {
+                    printCompleteJSON(error);
+                    chatPostMessageArgs.asUser = false;
+                    return callChatPostMessage(chatPostMessageArgs).then(extractMessageTs)
+                        .catch(error => {
+                            printCompleteJSON(error);
+                            return undefined;
+                        });
+                });
+
+        const canvas = createCanvas(width, height);
+        const gifEncoder = createGIFEncoder(width, height);
+
+        Promise.all(imageFetchRequests).then(images =>
+            Promise.all(images.map(imageBuffer =>
+                promisifyImageLoader(imageBuffer).then(img => {
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+                    gifEncoder.addFrame(ctx);
+                })))
+        ).then(_ => uploadImage({
+            token: token,
             channelId: command.channel_id,
             prefName: prefectureName,
             prefKanjiName: prefecture.kanjiName,
-            file: encoder.out.getData()
+            radarType: mode === 'today' ? '直近一日分の' : '予測',
+            filetype: 'gif',
+            file: gifEncoder.out.getData()
+        })).then(_ => {
+            if (loadingMessageTs) {
+                return app.client.chat.delete({
+                    token: token,
+                    channel: command.channel_id,
+                    ts: loadingMessageTs
+                }).catch(printCompleteJSON)
+            } else {
+                return Promise.resolve();
+            }
+        }).catch(printCompleteJSON).finally(() => {
+            gifEncoder.finish();
         });
-    }).catch(console.log).finally(() => { encoder.finish(); });
+    }
 });
 
-function createGIFEncoder(width: number, height: number) {
+function extractMode(inputs: string[]): string | undefined {
+    if (inputs.length >= 2) {
+        return inputs[1];
+    } else {
+        return undefined;
+    }
+}
+
+type ImageUrlArgs = {
+    lat: number;
+    lon: number;
+    width: number;
+    height: number;
+    m: moment.Moment;
+}
+function buildImageUrl(args: ImageUrlArgs): string {
+    return `https://map.yahooapis.jp/map/V1/static?appid=${yahooAppId}&z=10&lat=${args.lat}&lon=${args.lon}&width=${args.width}&height=${args.height}&mode=${yahooMapMode}&overlay=type:rainfall|datelabel:on|date:${args.m.format('YYYYMMDDHHmm')}`;
+}
+
+type ChatPostMessageArgs = {
+    token: string;
+    channelId: string,
+    prefectureKanjiName: string;
+    asUser: boolean;
+}
+function callChatPostMessage(args: ChatPostMessageArgs): Promise<WebAPICallResult> {
+    const loadingMessage = `:mag: 現在、${args.prefectureKanjiName}付近の雨雲レーダーの情報を取得中です... :thunder_cloud_and_rain:`;
+    return app.client.chat.postMessage({
+        token: args.token,
+        channel: args.channelId,
+        text: loadingMessage,
+        blocks: [
+            {
+                type: 'context',
+                elements: [
+                    {
+                        type: 'mrkdwn',
+                        text: loadingMessage
+                    }
+                ]
+            }
+        ],
+        as_user: args.asUser
+    });
+}
+
+function extractMessageTs(res: any): string | undefined {
+    printCompleteJSON(res);
+    return res.ok ? res.message.ts : undefined
+}
+
+function printCompleteJSON(error: any): void {
+    console.log(JSON.stringify(error));
+}
+
+function createGIFEncoder(width: number, height: number): any {
     const encoder = new GIFEncoder(width, height);
     encoder.start();
     encoder.setRepeat(0);   // 0 for repeat, -1 for no-repeat
-    encoder.setDelay(800);  // frame delay in ms
-    encoder.setQuality(15); // image quality. 10 is default.
+    encoder.setDelay(1000);  // frame delay in ms
+    encoder.setQuality(5); // image quality. 10 is default.
     return encoder;
 }
 
+function promisifyImageLoader(buf: Buffer): Promise<Image> {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = (e) => reject(e);
+        img.src = buf;
+    });
+}
+
 type UploadImageArgs = {
-    botToken: string;
+    token: string;
     channelId: string;
     prefName: String;
     prefKanjiName: string;
+    radarType: string;
     file: Buffer;
+    filetype: string;
 }
-function uploadImage(args: UploadImageArgs) {
-    app.client.files.upload({
-        token: args.botToken,
-        title: `${args.prefKanjiName}付近の雨雲レーダーを表示しています`,
+function uploadImage(args: UploadImageArgs): Promise<void> {
+    return app.client.files.upload({
+        token: args.token,
+        title: `${args.prefKanjiName}付近の${args.radarType}雨雲レーダーを表示しています`,
         file: args.file,
-        filename: `amesh_${args.prefName}.gif`,
-        filetype: 'image/gif',
+        filename: `amesh_${args.prefName}.${args.filetype}`,
+        filetype: `image/${args.filetype}`,
         channels: args.channelId
     }).then(console.log);
 }
@@ -148,3 +272,10 @@ const prefectures: { [name: string]: Prefecture } = {
     kagoshima: new Prefecture('鹿児島県', 31.56028, 130.55806),
     okinawa: new Prefecture('沖縄県', 26.2125, 127.68111)
 };
+prefectures['oosaka'] = prefectures['osaka'];
+prefectures['ohsaka'] = prefectures['osaka'];
+prefectures['nigata'] = prefectures['niigata'];
+prefectures['hyougo'] = prefectures['hyogo'];
+prefectures['kouchi'] = prefectures['kochi'];
+prefectures['ooita'] = prefectures['oita'];
+prefectures['ohita'] = prefectures['oita'];

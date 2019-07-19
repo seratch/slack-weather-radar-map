@@ -1,13 +1,25 @@
 {
-    "name": "Slack Amesh Backend",
-    "description": "Slack Amesh",
-    "repository": "https://github.com/seratch/slack-rain-clouds-rader",
+    "name": "Slack Weather Radar Map",
+    "description": "Slack App backend which returns weather radar informaton in Japan.",
+    "repository": "https://github.com/seratch/slack-weather-radar-map",
     "keywords": [
         "Slack",
         "Slack API",
-        "Heroku"
+        "Bolt",
+        "TypeScript",
+        "Heroku",
+        "Yahoo! JAPAN APIs",
+        "Weather Radar Map"
     ],
     "env": {
+        "SLASH_COMMAND_NAME": {
+            "description": "Name the command and set the same one in Slack App configuration",
+            "value": "amesh"
+        },
+        "TZ": {
+            "description": "This app is supposed to be usd in Japan Standard Time",
+            "value": "Asia/Tokyo"
+        },
         "SLACK_SIGNING_SECRET": {
             "description": "Slack Signing Secret - https://api.slack.com/apps",
             "value": "cda6e9cbf46a********************"
@@ -19,6 +31,10 @@
         "YAHOO_JAPAN_API_CLIENT_ID": {
             "description": "Yahoo! JAPAN Application ID - https://e.developer.yahoo.co.jp/dashboard/",
             "value": "cda6e9cbf46a********************"
+        },
+        "YAHOO_JAPAN_API_MAP_MODE": {
+            "description": "Yahoo! JAPAN Static Map API (map,photo,map-b1,hd,hybrid) - https://developer.yahoo.co.jp/webapi/map/openlocalplatform/v1/static.html#request-param",
+            "value": "map"
         }
     },
     "image": "heroku/nodejs"
