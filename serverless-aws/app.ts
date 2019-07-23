@@ -2,6 +2,7 @@
 
 import { App, LogLevel, ExpressReceiver } from '@slack/bolt';
 import * as moment from 'moment-timezone';
+import AWS = require('aws-sdk');
 
 const expressReceiver = new ExpressReceiver({
     signingSecret: process.env.SLACK_SIGNING_SECRET
@@ -11,15 +12,23 @@ const app = new App({
     receiver: expressReceiver,
     logLevel: LogLevel.DEBUG
 });
+// app.use(args => {
+//     console.log(JSON.stringify(args));
+//     args.next();
+// })
 app.error(printCompleteJSON);
-
-// see also handler.ts
-export const expressApp = expressReceiver.app;
 
 const request = require('request-promise-native');
 const yahooAppId = process.env.YAHOO_JAPAN_API_CLIENT_ID;
 const yahooMapMode = process.env.YAHOO_JAPAN_API_MAP_MODE || 'map';
 const slashCommandName = (process.env.SLASH_COMMAND_NAME || 'amesh').replace(/\//, '');
+
+// --------------------------------------
+// Slack App Frontend
+// --------------------------------------
+
+// see also handler.ts
+export const expressApp = expressReceiver.app;
 
 app.command(`/${slashCommandName}`, async ({ command, ack, context }) => {
 
@@ -29,41 +38,72 @@ app.command(`/${slashCommandName}`, async ({ command, ack, context }) => {
     const prefecture = prefectures[prefectureName] || prefectures['tokyo'];
     const lat = prefecture.lat, lon = prefecture.lon;
     const width = 400, height = 300;
-    const token = context.botToken;
 
-    var m = moment().tz('Asia/Tokyo');
-    const url = buildImageUrl({ lat, lon, width, height, m });
-    console.log(`Image url: ${url}`);
+    const m = moment().tz('Asia/Tokyo');
+    const asyncOpArgs: AsyncOperationArgs = {
+        url: buildYahooImageUrl({ lat, lon, width, height, m }),
+        token: context.botToken,
+        channelId: command.channel_id,
+        prefName: prefectureName,
+        prefKanjiName: prefecture.kanjiName,
+        file: undefined // replace this later
+    };
 
-    const req: Promise<Buffer> = request.get({ url: url, encoding: null });
-    // To make the code simple, this function is blocking. Slack requests may time out.
-    // Ideally, you should move these operations to another lambda function to run it asynchronously.
-    await req.then(image => {
-        return uploadImage({
-            token: token,
-            channelId: command.channel_id,
-            prefName: prefectureName,
-            prefKanjiName: prefecture.kanjiName,
-            file: image
-        });
-    }).catch(printCompleteJSON);
+    if (process.env.IS_OFFLINE === 'true') { // serverless-offline
+        ack();
+        fetchImageAndUpload(asyncOpArgs);
 
-    ack();
+    } else {
+        // on AWS
+        const lambda = new AWS.Lambda();
+        const service: string = process.env.SERVERLESS_SERVICE;
+        const stage: string = process.env.SERVERLESS_STAGE || 'dev';
+        const params: AWS.Lambda.InvocationRequest = {
+            InvocationType: 'Event', // async invocation
+            FunctionName: `${service}-${stage}-backend`, // `backend` here is the name under `functions` in serverless.yml
+            Payload: JSON.stringify(asyncOpArgs)
+        };
+        const response = await lambda.invoke(params).promise();
+        console.log(response);
+
+        ack();
+    }
 });
 
-type ImageUrlArgs = {
+type YahooImageUrlArgs = {
     lat: number;
     lon: number;
     width: number;
     height: number;
     m: moment.Moment;
 }
-function buildImageUrl(args: ImageUrlArgs): string {
+function buildYahooImageUrl(args: YahooImageUrlArgs): string {
     return `https://map.yahooapis.jp/map/V1/static?appid=${yahooAppId}&z=10&lat=${args.lat}&lon=${args.lon}&width=${args.width}&height=${args.height}&mode=${yahooMapMode}&overlay=type:rainfall|datelabel:on|date:${args.m.format('YYYYMMDDHHmm')}`;
 }
 
-function printCompleteJSON(error: any): void {
-    console.log(JSON.stringify(error));
+// --------------------------------------
+// Slack App Backend
+// --------------------------------------
+
+export const backendOperation = async function (event, _context) {
+    await fetchImageAndUpload(event);
+    return {
+        statusCode: 200,
+        body: JSON.stringify({
+            message: 'done'
+        })
+    };
+};
+
+type AsyncOperationArgs = UploadImageArgs & {
+    url: string;
+};
+function fetchImageAndUpload(args: AsyncOperationArgs): Promise<void> {
+    const req: Promise<Buffer> = request.get({ url: args.url, encoding: null });
+    return req.then(image => {
+        args.file = image;
+        return uploadImage(args);
+    }).catch(printCompleteJSON);
 }
 
 type UploadImageArgs = {
@@ -82,6 +122,14 @@ function uploadImage(args: UploadImageArgs): Promise<void> {
         filetype: `image/png`,
         channels: args.channelId
     }).then(console.log);
+}
+
+// --------------------------------------
+// Others
+// --------------------------------------
+
+function printCompleteJSON(error: any): void {
+    console.log(JSON.stringify(error));
 }
 
 class Prefecture {

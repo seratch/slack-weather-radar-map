@@ -9,8 +9,16 @@ provider:
   name: aws
   runtime: nodejs10.x
   region: ap-northeast-1 # Tokyo Region
+  stage: ${opt:stage, 'dev'}
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - lambda:InvokeFunction
+        - lambda:InvokeAsync
+      Resource: "*"
   environment:
-    SERVERLESS_STAGE: ${env:SERVERLESS_STAGE, 'dev'}
+    SERVERLESS_SERVICE: ${self:service}
+    SERVERLESS_STAGE: ${self:provider.stage}
     SLACK_SIGNING_SECRET: ${env:SLACK_SIGNING_SECRET}
     SLACK_BOT_TOKEN: ${env:SLACK_BOT_TOKEN}
     SLASH_COMMAND_NAME: ${env:SLASH_COMMAND_NAME}
@@ -18,9 +26,11 @@ provider:
     YAHOO_JAPAN_API_MAP_MODE: ${env:YAHOO_JAPAN_API_MAP_MODE}
 
 functions:
-  app:
-    handler: handler.app
+  frontend:
+    handler: handler.frontend
     events:
       - http:
           method: post
           path: /slack/events
+  backend:
+    handler: handler.backend
