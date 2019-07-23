@@ -1,6 +1,7 @@
 'use strict';
 
 import { App, LogLevel, ExpressReceiver } from '@slack/bolt';
+import { IncomingWebhook } from '@slack/webhook';
 import * as moment from 'moment-timezone';
 import AWS = require('aws-sdk');
 
@@ -41,8 +42,9 @@ app.command(`/${slashCommandName}`, async ({ command, ack, context }) => {
 
     const m = moment().tz('Asia/Tokyo');
     const asyncOpArgs: AsyncOperationArgs = {
-        url: buildYahooImageUrl({ lat, lon, width, height, m }),
         token: context.botToken,
+        yahooImageUrl: buildYahooImageUrl({ lat, lon, width, height, m }),
+        responseUrl: command.response_url,
         channelId: command.channel_id,
         prefName: prefectureName,
         prefKanjiName: prefecture.kanjiName,
@@ -52,7 +54,6 @@ app.command(`/${slashCommandName}`, async ({ command, ack, context }) => {
     if (process.env.IS_OFFLINE === 'true') { // serverless-offline
         ack();
         fetchImageAndUpload(asyncOpArgs);
-
     } else {
         // on AWS
         const lambda = new AWS.Lambda();
@@ -96,14 +97,22 @@ export const backendOperation = async function (event, _context) {
 };
 
 type AsyncOperationArgs = UploadImageArgs & {
-    url: string;
+    yahooImageUrl: string;
+    responseUrl: string;
 };
 function fetchImageAndUpload(args: AsyncOperationArgs): Promise<void> {
-    const req: Promise<Buffer> = request.get({ url: args.url, encoding: null });
+    const req: Promise<Buffer> = request.get({ url: args.yahooImageUrl, encoding: null });
     return req.then(image => {
         args.file = image;
         return uploadImage(args);
-    }).catch(printCompleteJSON);
+    }).catch(err => {
+        const jsonData = JSON.stringify(err);
+        console.log(jsonData);
+        return new IncomingWebhook(args.responseUrl)
+            .send(`Failed to post an image file - ${jsonData}`)
+            .then(printCompleteJSON)
+            .catch(printCompleteJSON);
+    });
 }
 
 type UploadImageArgs = {
@@ -114,14 +123,17 @@ type UploadImageArgs = {
     file: Buffer;
 }
 function uploadImage(args: UploadImageArgs): Promise<void> {
-    return app.client.files.upload({
-        token: args.token,
-        title: `${args.prefKanjiName}付近の現在の雨雲レーダーを表示しています`,
-        file: args.file,
-        filename: `amesh_${args.prefName}.png`,
-        filetype: `image/png`,
-        channels: args.channelId
-    }).then(console.log);
+    return app.client.files
+        .upload({
+            token: args.token,
+            title: `${args.prefKanjiName}付近の現在の雨雲レーダーを表示しています`,
+            file: args.file,
+            filename: `amesh_${args.prefName}.png`,
+            filetype: `image/png`,
+            channels: args.channelId
+        })
+        .then(printCompleteJSON)
+        .catch(printCompleteJSON);
 }
 
 // --------------------------------------

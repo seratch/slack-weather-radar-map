@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@slack/bolt": "^1.2.0",
+    "@slack/webhook": "^5.0.0",
     "aws-sdk": "^2.497.0",
     "aws-serverless-express": "^3.3.6",
     "moment-timezone": "^0.5.26",
