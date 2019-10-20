@@ -2,25 +2,11 @@
 
 This is a working example app which displays Japan weather radar maps on Slack. This application is built with [Bolt⚡️](https://github.com/SlackAPI/bolt) and [Yahoo! JAPAN Static Map API (雨雲レーダー表示)](https://developer.yahoo.co.jp/webapi/map/openlocalplatform/v1/static.html#exp_weather).
 
-[![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy?template=https://github.com/seratch/slack-weather-radar-map/tree/master)
-
 ## `/amesh {prefecture name}`
-
-This command posts an animated GIF showing the forecasting weather map.
-
-<img src="https://raw.githubusercontent.com/seratch/slack-weather-radar-map/master/images/demo_amesh_hiroshima.gif" height=400/>
-
-## `/amesh {prefecture name} now`
 
 This command instantly posts the present moment image.
 
 <img src="https://raw.githubusercontent.com/seratch/slack-weather-radar-map/master/images/demo_amesh_tokyo_now.gif" height=400/>
-
-## `/amesh {prefecture name} today`
-
-This command posts the transition of weather map in the last 24 hours.
-
-<img src="https://raw.githubusercontent.com/seratch/slack-weather-radar-map/master/images/demo_amesh_okinawa_today.gif" height=400/>
 
 ## Map Mode
 
