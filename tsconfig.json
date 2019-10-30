@@ -64,6 +64,7 @@
   },
   "exclude": [
     "cloud-functions-for-firebase",
+    "google-cloud-run",
     "serverless-aws"
   ]
 }
